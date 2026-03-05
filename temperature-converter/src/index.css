@@ -1,0 +1,16 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  font-family: "Verdana", "Geneva", sans-serif;
+  color: #1f2937;
+  background: linear-gradient(140deg, #f6f8ff, #dff1ff);
+}
+
+#root {
+  min-height: 100vh;
+}

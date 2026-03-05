@@ -1,9 +1,8 @@
 const express = require('express');
+const Task = require('../models/Task');
+const Counter = require('../models/Counter');
 
 const router = express.Router();
-
-let tasks = [];
-let nextId = 1;
 
 // Ensure route IDs are positive integers before querying/updating the array.
 function parseTaskId(idParam) {
@@ -51,55 +50,72 @@ function validateTaskPayload(payload, isUpdate = false) {
   return errors;
 }
 
+async function getNextTaskId() {
+  const counter = await Counter.findByIdAndUpdate(
+    'task_id',
+    { $inc: { seq: 1 } },
+    { new: true, upsert: true }
+  );
+
+  return counter.seq;
+}
+
 // Create task
-router.post('/', (req, res) => {
+router.post('/', async (req, res, next) => {
   const validationErrors = validateTaskPayload(req.body);
   if (validationErrors.length > 0) {
     return res.status(400).json({ message: 'Validation failed', errors: validationErrors });
   }
 
-  const newTask = {
-    id: nextId++,
-    title: req.body.title.trim(),
-    description: req.body.description.trim(),
-    status: 'Pending',
-    createdAt: new Date()
-  };
+  try {
+    const nextTaskId = await getNextTaskId();
+    const newTask = await Task.create({
+      id: nextTaskId,
+      title: req.body.title.trim(),
+      description: req.body.description.trim(),
+      status: 'Pending'
+    });
 
-  tasks.push(newTask);
-  return res.status(201).json(newTask);
+    return res.status(201).json(newTask);
+  } catch (error) {
+    return next(error);
+  }
 });
 
 // Get all tasks
-router.get('/', (req, res) => {
-  return res.status(200).json(tasks);
+router.get('/', async (req, res, next) => {
+  try {
+    const tasks = await Task.find().sort({ id: 1 });
+    return res.status(200).json(tasks);
+  } catch (error) {
+    return next(error);
+  }
 });
 
 // Get one task by ID
-router.get('/:id', (req, res) => {
+router.get('/:id', async (req, res, next) => {
   const id = parseTaskId(req.params.id);
   if (!id) {
     return res.status(400).json({ message: 'Invalid task ID.' });
   }
 
-  const task = tasks.find((item) => item.id === id);
-  if (!task) {
-    return res.status(404).json({ message: 'Task not found.' });
-  }
+  try {
+    const task = await Task.findOne({ id });
+    if (!task) {
+      return res.status(404).json({ message: 'Task not found.' });
+    }
 
-  return res.status(200).json(task);
+    return res.status(200).json(task);
+  } catch (error) {
+    return next(error);
+  }
 });
 
 // Update task by ID
-router.put('/:id', (req, res) => {
+router.put('/:id', async (req, res, next) => {
   const id = parseTaskId(req.params.id);
   if (!id) {
     return res.status(400).json({ message: 'Invalid task ID.' });
-  }
-
-  const task = tasks.find((item) => item.id === id);
-  if (!task) {
-    return res.status(404).json({ message: 'Task not found.' });
   }
 
   const validationErrors = validateTaskPayload(req.body, true);
@@ -107,33 +123,50 @@ router.put('/:id', (req, res) => {
     return res.status(400).json({ message: 'Validation failed', errors: validationErrors });
   }
 
+  const updateData = {};
   if (Object.prototype.hasOwnProperty.call(req.body, 'title')) {
-    task.title = req.body.title.trim();
+    updateData.title = req.body.title.trim();
   }
   if (Object.prototype.hasOwnProperty.call(req.body, 'description')) {
-    task.description = req.body.description.trim();
+    updateData.description = req.body.description.trim();
   }
   if (Object.prototype.hasOwnProperty.call(req.body, 'status')) {
-    task.status = req.body.status;
+    updateData.status = req.body.status;
   }
 
-  return res.status(200).json(task);
+  try {
+    const updatedTask = await Task.findOneAndUpdate({ id }, updateData, {
+      new: true,
+      runValidators: true
+    });
+
+    if (!updatedTask) {
+      return res.status(404).json({ message: 'Task not found.' });
+    }
+
+    return res.status(200).json(updatedTask);
+  } catch (error) {
+    return next(error);
+  }
 });
 
 // Delete task by ID
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res, next) => {
   const id = parseTaskId(req.params.id);
   if (!id) {
     return res.status(400).json({ message: 'Invalid task ID.' });
   }
 
-  const taskIndex = tasks.findIndex((item) => item.id === id);
-  if (taskIndex === -1) {
-    return res.status(404).json({ message: 'Task not found.' });
-  }
+  try {
+    const deletedTask = await Task.findOneAndDelete({ id });
+    if (!deletedTask) {
+      return res.status(404).json({ message: 'Task not found.' });
+    }
 
-  const deletedTask = tasks.splice(taskIndex, 1)[0];
-  return res.status(200).json({ message: 'Task deleted successfully.', task: deletedTask });
+    return res.status(200).json({ message: 'Task deleted successfully.', task: deletedTask });
+  } catch (error) {
+    return next(error);
+  }
 });
 
 module.exports = router;
